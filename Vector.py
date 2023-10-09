@@ -4,13 +4,13 @@ import sys
 import string
 import time
 
-#function toread ground_truth.txt file
+# Function to read ground_truth.txt file
 def read_ground_truth(file_path):
     ground_truth = {}
     with open(file_path, 'r') as file:
         for line in file:
             line = line.strip()
-            #to avoid commented part of file
+            # To avoid commented part of file
             if line and not line.startswith('#'):
                 term, ids = line.split(' - ')
                 ground_truth[term] = [int(id) for id in ids.split(',')]
@@ -31,6 +31,7 @@ def find_line_number(file_name, target_string):
                     return line_number
                 blank_lines_count = 0
     return -1
+
 
 # Function to extract fables
 def extract_fables(file_name):
@@ -76,10 +77,11 @@ def extract_fables(file_name):
     # Preprocess the extracted documents
     source_folder = 'collection_original'
     target_folder = 'collection_no_stopwords'
-    # call this function here to preprocess documents and avoid us of additional command
+    # Call this function here to preprocess documents and avoid the use of additional command
     preprocess_documents(source_folder, target_folder)
 
-#------------------------------------------Stopword remove------------------------------------------------------------
+
+# ------------------------------------------Stopword remove------------------------------------------------------------
 # Function to remove stopwords
 def remove_stopwords(text):
     with open('englishST.txt', 'r') as stopwords_file:
@@ -90,7 +92,8 @@ def remove_stopwords(text):
     filtered_words = [word for word in words if word not in stopwords]
     return ' '.join(filtered_words)
 
-#------------------------------------------Stemming using porter algorithm------------------------------------------------------------
+
+# ------------------------------------------Stemming using porter algorithm------------------------------------------------------------
 # Function to apply stemming using the Porter algorithm using porter.txt file
 def apply_stemming(word):
     def is_consonant(char):
@@ -290,6 +293,7 @@ def apply_stemming(word):
 
     return word
 
+
 # Function to preprocess the documents
 def preprocess_documents(source_folder, target_folder):
     if not os.path.exists(target_folder):
@@ -307,10 +311,38 @@ def preprocess_documents(source_folder, target_folder):
 
     print("Documents preprocessed successfully.")
 
-#------------------------------------------Search------------------------------------------------------------
+
+# ------------------------------------------Search------------------------------------------------------------
+
+## # import os
+import re
+import sys
+import string
+import time
+
+
+# Function to preprocess the documents
+def preprocess_documents(source_folder, target_folder):
+    if not os.path.exists(target_folder):
+        os.makedirs(target_folder)
+    for file_name in os.listdir(source_folder):
+        with open(os.path.join(source_folder, file_name), 'r') as file:
+            content = file.read()
+        if '--stemming' in sys.argv:
+            content = apply_stemming(content)
+        else:
+            content = remove_stopwords(content)
+        target_file_name = os.path.join(target_folder, file_name)
+        with open(target_file_name, 'w') as file:
+            file.write(content)
+
+    print("Documents preprocessed successfully.")
+
+
+# ------------------------------------------Search------------------------------------------------------------
 
 # Function for linear search
-def linear_search(query, model, folder, apply_stemming_flag,ground_truth):
+def linear_search(query, model, folder, apply_stemming_flag, ground_truth):
     if apply_stemming_flag:
         query = apply_stemming(query)
     else:
@@ -323,159 +355,166 @@ def linear_search(query, model, folder, apply_stemming_flag,ground_truth):
     for file_name in os.listdir(folder):
         with open(os.path.join(folder, file_name), 'r') as file:
             content = file.read()
-
+        if apply_stemming_flag:
+            content = apply_stemming(content)
+        else:
+            content = remove_stopwords(content)
         if query.lower() in content.lower():
             results.append(file_name)
     end_time = time.time()
-    execution_time = (end_time - start_time) * 1000
+    print_results(results, ground_truth)
 
     relevant_docs = set()
-
     for result in results:
         doc_id = int(result.split('_')[0])
         relevant_docs.add(doc_id)
 
-    precision = 0.0  # Initialize with default value
-    recall = 0.0  # Initialize with default value
+    true_positives = len(relevant_docs.intersection(ground_truth))
+    retrieved_docs = len(relevant_docs)
 
-    if query in ground_truth:
-        relevant_docs_ground_truth = set(ground_truth[query])
-        true_positives = len(relevant_docs.intersection(relevant_docs_ground_truth))
-        retrieved_docs = len(relevant_docs)
+    precision = true_positives / retrieved_docs if retrieved_docs > 0 else 0.0
+    recall = true_positives / len(ground_truth) if len(ground_truth) > 0 else 0.0
 
-        if retrieved_docs > 0:
-            precision = true_positives / retrieved_docs
+    print(f"Precision: {precision:.2f}")
+    print(f"Recall: {recall:.2f}")
 
-        if len(relevant_docs_ground_truth) > 0:
-            recall = true_positives / len(relevant_docs_ground_truth)
-        precision_str = f"P={precision:.2f}"
-        recall_str = f"R={recall:.2f}"
-    else:
-      precision_str="P=?"
-      recall_str="R=?"
-    return results, execution_time, precision_str, recall_str
+    print(f"Search completed in {end_time - start_time} seconds.")
+    return results, end_time - start_time, precision, recall
 
 
+# Main function
+def main():
+    # Read ground_truth.txt file
+    ground_truth = read_ground_truth('ground_truth.txt')
+
+    # Extract fables from the original collection
+    file_name = 'collection_original.txt'
+    extract_fables(file_name)
+
+    # Read user query from the command line
+    query = input("Enter your query: ")
+
+    # Perform linear search on the preprocessed collection without stemming
+    model = 'Linear Search'
+    folder = 'collection_no_stopwords'
+    apply_stemming_flag = False
+    results, execution_time, precision, recall = linear_search(query, model, folder, apply_stemming_flag, ground_truth)
+    print(f"Search completed in {execution_time:.2f} seconds.")
+    print(f"Precision: {precision:.2f}")
+    print(f"Recall: {recall:.2f}")
 
 
-# Function for inverted list search
-def inverted_list_search(query, model, folder, apply_stemming_flag,ground_truth):
-    if apply_stemming_flag:
-        query = apply_stemming(query)
-    else:
-        query = remove_stopwords(query)
 
-    print(f"Model: {model}, Query: {query}")
-    print("Search Results:")
+# Main function
+def main():
+    # Read ground_truth.txt file
+    ground_truth = read_ground_truth('ground_truth.txt')
 
-    inverted_index = {}
-    start_time = time.time()
-    for file_name in os.listdir(folder):
-        with open(os.path.join(folder, file_name), 'r') as file:
-            content = file.read()
-        words = content.lower().split()
-        translator = str.maketrans("", "", string.punctuation)  # Translator to remove punctuation marks
-        for word in words:
-            word = word.translate(translator)  # Remove punctuation marks from the word
-            if word:
-                if word not in inverted_index:
-                    inverted_index[word] = []
-                inverted_index[word].append(file_name)
+    # Extract fables from the original collection
+    file_name = 'collection_original.txt'
+    extract_fables(file_name)
 
-    # Process the query terms
-    results = None
-    operators = ['&', '|', '-']
-    query_terms = []
-    query_operator = None
+    # Read user query from the command line
+    query = input("Enter your query: ")
 
-    for operator in operators:
-        if operator in query:
-            query_terms = query.split(operator)
-            query_operator = operator
-            break
+    # Perform linear search on the preprocessed collection without stemming
+    model = 'Linear Search'
+    folder = 'collection_no_stopwords'
+    apply_stemming_flag = False
+    results, execution_time = linear_search(query, model, folder, apply_stemming_flag, ground_truth)
+    print(f"Search completed in {execution_time:.2f} seconds.")
 
-    start_time = time.time()
-#for conjuction
-    if query_operator == '&':
-        term1 = query_terms[0].strip()
-        term2 = query_terms[1].strip()
-        results_term1 = set(inverted_index.get(term1, []))
-        results_term2 = set(inverted_index.get(term2, []))
-        results = list(results_term1.intersection(results_term2))
-#for disjuction
-    elif query_operator == '|':
-        term1 = query_terms[0].strip()
-        term2 = query_terms[1].strip()
-        results = list(set(inverted_index.get(term1, [])) | set(inverted_index.get(term2, [])))
-#for negation
-    elif query_operator == '-':
-        negation_term = query_terms[0].strip()[1:]
-        results = list(set(os.listdir(folder)) - set(inverted_index.get(negation_term, [])))
 
-    precision = recall = 0.0
-    relevant_docs = set()
 
+
+# Main function
+def main():
+    # Read ground_truth.txt file
+    ground_truth = read_ground_truth('ground_truth.txt')
+
+    # Extract fables from the original collection
+    file_name = 'collection_original.txt'
+    extract_fables(file_name)
+
+    # Read user query from the command line
+    query = input("Enter your query: ")
+
+    # Perform linear search on the preprocessed collection without stemming
+    model = 'Linear Search'
+    folder = 'collection_no_stopwords'
+    apply_stemming_flag = False
+    results, execution_time = linear_search(query, model, folder, apply_stemming_flag, ground_truth)
+    print(f"Search completed in {execution_time:.2f} seconds.")
+
+
+
+
+
+
+# Function to print search results
+def print_results(results, ground_truth):
     for result in results:
-        doc_id = int(result.split('_')[0])
-        relevant_docs.add(doc_id)
-
-    if query_terms:
-        relevant_docs_ground_truth = set()
-        for term in query_terms:
-            if term in ground_truth:
-                relevant_docs_ground_truth.update(ground_truth[term])
-
-        true_positives = len(relevant_docs.intersection(relevant_docs_ground_truth))
-        retrieved_docs = len(relevant_docs)
-
-        if retrieved_docs > 0:
-            precision = true_positives / retrieved_docs
-
-        if len(relevant_docs_ground_truth) > 0:
-            recall = true_positives / len(relevant_docs_ground_truth)
-       
-    end_time = time.time()
-    precision_str = f"P={precision:.2f}" if precision > 0 else "P=?"
-    recall_str = f"R={recall:.2f}" if recall > 0 else "R=?"
-    execution_time = (end_time - start_time) * 1000
-    return results,execution_time,precision_str,recall_str
-
-
-#------------------------------------------Calling function------------------------------------------------------------
-
-if __name__ == '__main__':
-    if len(sys.argv) == 3 and sys.argv[1] == '--extract-collection':
-        file_name = sys.argv[2]
-        extract_fables(file_name)
-    elif (
-        len(sys.argv) == 10
-        and sys.argv[1] == '--model'
-        and sys.argv[2] == 'bool'
-        and sys.argv[3] == '--search-mode'
-        and (sys.argv[4] == 'linear' or sys.argv[4] == 'inverted')
-        and sys.argv[5] == '--documents'
-        and (sys.argv[6] == 'original' or sys.argv[6] == 'no_stopwords')
-        and sys.argv[7] == '--stemming'
-        and sys.argv[8] == '--query'
-    ):
-        model = sys.argv[6]
-        apply_stemming_flag = True
-        query = sys.argv[9]
-        if model == "original":
-            folder = "collection_original"
+        fable_number = result[:2]
+        if int(fable_number) in ground_truth:
+            relevance = 'Relevant'
         else:
-            folder = "collection_no_stopwords"
-        ground_truth = read_ground_truth("ground_truth.txt")
-        if sys.argv[4] == 'linear':
-            results,execution_time,precision_str,recall_str=linear_search(query, model, folder, apply_stemming_flag, ground_truth)
-        else:
-           results,execution_time,precision_str,recall_str= inverted_list_search(query, model, folder, apply_stemming_flag, ground_truth)
-        for result in results:
-            print(result)
-        print(f"T={execution_time:.2f}ms,{precision_str},{recall_str}")
+            relevance = 'Not Relevant'
+        print(f"{result}: {relevance}")
 
-    else:
-        print("Invalid command line arguments.")
-        print("Usage: python my_ir_system.py --extract-collection aesop10.txt")
-        print("Usage: python my_ir_system.py --model \"bool\" --search-mode \"linear\" --documents \"original\" --stemming --query \"somesearchterm\"")
-        print("Usage: python my_ir_system.py --model \"bool\" --search-mode \"inverted\" --documents \"original\" --stemming --query \"somesearchterm(fox|wolf\"")
+
+# Main function
+def main():
+    # Read ground_truth.txt file
+    ground_truth = read_ground_truth('ground_truth.txt')
+
+    # Extract fables from the original collection
+    file_name = 'collection_original.txt'
+    extract_fables(file_name)
+
+    # Read user query from the command line
+    query = input("Enter your query: ")
+
+    # Perform linear search on the preprocessed collection without stemming
+    model = 'Linear Search'
+    folder = 'collection_no_stopwords'
+    apply_stemming_flag = False
+    linear_search(query, model, folder, apply_stemming_flag, ground_truth)
+
+# Read the ground_truth.txt file
+ground_truth = read_ground_truth("ground_truth.txt")
+
+# Extract fables from the given file
+file_name = "aesopa10.txt"
+extract_fables(file_name)
+
+# Define the model and folder paths
+models = ["linear", "inverted"]
+folders = ["collection_no_stopwords", "collection_stemming"]
+
+# Query examples
+queries = ["fox", "lion", "rabbit", "fox & lion", "fox | lion", "-fox", "-lion", "fox & -lion", "fox | -lion"]
+
+# Perform search for each model and folder combination
+for model in models:
+    for folder in folders:
+        print(f"\n==============================\nModel: {model}, Folder: {folder}\n==============================")
+        if model == "linear":
+            for query in queries:
+                results, execution_time, precision, recall = linear_search(query, model, folder, folder == "collection_stemming", ground_truth)
+                print(f"Query: {query}")
+                print(f"Results: {results}")
+                print(f"Execution Time: {execution_time:.2f} ms")
+                print(f"Precision: {precision}")
+                print(f"Recall: {recall}")
+                print()
+        elif model == "inverted":
+            for query in queries:
+                results, execution_time, precision, recall = inverted_list_search(query, model, folder, folder == "collection_stemming", ground_truth)
+                print(f"Query: {query}")
+                print(f"Results: {results}")
+                print(f"Execution Time: {execution_time:.2f} ms")
+                print(f"Precision: {precision}")
+                print(f"Recall: {recall}")
+                print()
+
+

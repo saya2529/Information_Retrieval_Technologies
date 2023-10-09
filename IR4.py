@@ -3,14 +3,16 @@ import re
 import sys
 import string
 import time
+from math import log10, sqrt
 
-#function toread ground_truth.txt file
+
+# Function to read the ground_truth.txt file
 def read_ground_truth(file_path):
     ground_truth = {}
     with open(file_path, 'r') as file:
         for line in file:
             line = line.strip()
-            #to avoid commented part of file
+            # To avoid commented part of file
             if line and not line.startswith('#'):
                 term, ids = line.split(' - ')
                 ground_truth[term] = [int(id) for id in ids.split(',')]
@@ -31,6 +33,7 @@ def find_line_number(file_name, target_string):
                     return line_number
                 blank_lines_count = 0
     return -1
+
 
 # Function to extract fables
 def extract_fables(file_name):
@@ -73,13 +76,8 @@ def extract_fables(file_name):
 
     print("Fables extracted successfully.")
 
-    # Preprocess the extracted documents
-    source_folder = 'collection_original'
-    target_folder = 'collection_no_stopwords'
-    # call this function here to preprocess documents and avoid us of additional command
-    preprocess_documents(source_folder, target_folder)
 
-#------------------------------------------Stopword remove------------------------------------------------------------
+# ------------------------------------------Stopword remove------------------------------------------------------------
 # Function to remove stopwords
 def remove_stopwords(text):
     with open('englishST.txt', 'r') as stopwords_file:
@@ -90,7 +88,8 @@ def remove_stopwords(text):
     filtered_words = [word for word in words if word not in stopwords]
     return ' '.join(filtered_words)
 
-#------------------------------------------Stemming using porter algorithm------------------------------------------------------------
+
+# ------------------------------------------Stemming using porter algorithm------------------------------------------------------------
 # Function to apply stemming using the Porter algorithm using porter.txt file
 def apply_stemming(word):
     def is_consonant(char):
@@ -290,192 +289,179 @@ def apply_stemming(word):
 
     return word
 
+
 # Function to preprocess the documents
 def preprocess_documents(source_folder, target_folder):
     if not os.path.exists(target_folder):
         os.makedirs(target_folder)
     for file_name in os.listdir(source_folder):
         with open(os.path.join(source_folder, file_name), 'r') as file:
-            content = file.read()
-        if '--stemming' in sys.argv:
-            content = apply_stemming(content)
-        else:
-            content = remove_stopwords(content)
-        target_file_name = os.path.join(target_folder, file_name)
-        with open(target_file_name, 'w') as file:
-            file.write(content)
+            text = file.read()
+
+        # Remove stopwords
+        text = remove_stopwords(text)
+
+        # Apply stemming
+        words = text.split()
+        stemmed_words = [apply_stemming(word) for word in words]
+        processed_text = ' '.join(stemmed_words)
+
+        # Write processed text to target folder
+        with open(os.path.join(target_folder, file_name), 'w') as file:
+            file.write(processed_text)
 
     print("Documents preprocessed successfully.")
 
-#------------------------------------------Search------------------------------------------------------------
 
-# Function for linear search
-def linear_search(query, model, folder, apply_stemming_flag,ground_truth):
-    if apply_stemming_flag:
-        query = apply_stemming(query)
-    else:
-        query = remove_stopwords(query)
+# Function to calculate the TF-IDF vector
+def calculate_tf_idf_vector(documents_folder):
+    document_vectors = {}
+    document_frequencies = {}
+    num_documents = 0
 
-    print(f"Model: {model}, Query: {query}")
-    print("Search Results:")
-    results = []
-    start_time = time.time()
-    for file_name in os.listdir(folder):
-        with open(os.path.join(folder, file_name), 'r') as file:
-            content = file.read()
+    # Calculate document frequencies
+    for file_name in os.listdir(documents_folder):
+        with open(os.path.join(documents_folder, file_name), 'r') as file:
+            document = file.read()
+        words = document.split()
+        unique_words = set(words)
+        for word in unique_words:
+            if word in document_frequencies:
+                document_frequencies[word] += 1
+            else:
+                document_frequencies[word] = 1
 
-        if query.lower() in content.lower():
-            results.append(file_name)
-    end_time = time.time()
-    execution_time = (end_time - start_time) * 1000
+        num_documents += 1
 
-    relevant_docs = set()
-
-    for result in results:
-        doc_id = int(result.split('_')[0])
-        relevant_docs.add(doc_id)
-
-    precision = 0.0  # Initialize with default value
-    recall = 0.0  # Initialize with default value
-
-    if query in ground_truth:
-        relevant_docs_ground_truth = set(ground_truth[query])
-        true_positives = len(relevant_docs.intersection(relevant_docs_ground_truth))
-        retrieved_docs = len(relevant_docs)
-
-        if retrieved_docs > 0:
-            precision = true_positives / retrieved_docs
-
-        if len(relevant_docs_ground_truth) > 0:
-            recall = true_positives / len(relevant_docs_ground_truth)
-        precision_str = f"P={precision:.2f}"
-        recall_str = f"R={recall:.2f}"
-    else:
-      precision_str="P=?"
-      recall_str="R=?"
-    return results, execution_time, precision_str, recall_str
-
-
-
-
-# Function for inverted list search
-def inverted_list_search(query, model, folder, apply_stemming_flag,ground_truth):
-    if apply_stemming_flag:
-        query = apply_stemming(query)
-    else:
-        query = remove_stopwords(query)
-
-    print(f"Model: {model}, Query: {query}")
-    print("Search Results:")
-
-    inverted_index = {}
-    start_time = time.time()
-    for file_name in os.listdir(folder):
-        with open(os.path.join(folder, file_name), 'r') as file:
-            content = file.read()
-        words = content.lower().split()
-        translator = str.maketrans("", "", string.punctuation)  # Translator to remove punctuation marks
+    # Calculate TF-IDF vectors
+    for file_name in os.listdir(documents_folder):
+        with open(os.path.join(documents_folder, file_name), 'r') as file:
+            document = file.read()
+        words = document.split()
+        word_counts = {}
+        max_word_count = 0
         for word in words:
-            word = word.translate(translator)  # Remove punctuation marks from the word
-            if word:
-                if word not in inverted_index:
-                    inverted_index[word] = []
-                inverted_index[word].append(file_name)
+            if word in word_counts:
+                word_counts[word] += 1
+            else:
+                word_counts[word] = 1
+            max_word_count = max(max_word_count, word_counts[word])
 
-    # Process the query terms
-    results = None
-    operators = ['&', '|', '-']
-    query_terms = []
-    query_operator = None
+        tf_idf_vector = {}
+        for word in words:
+            tf = word_counts[word] / max_word_count
+            idf = log10(num_documents / document_frequencies[word])
+            tf_idf = tf * idf
+            tf_idf_vector[word] = tf_idf
 
-    for operator in operators:
-        if operator in query:
-            query_terms = query.split(operator)
-            query_operator = operator
+        document_vectors[file_name] = tf_idf_vector
+
+    return document_vectors
+
+
+# Function to calculate the cosine similarity between two vectors
+def calculate_cosine_similarity(vector1, vector2):
+    dot_product = 0
+    magnitude1 = 0
+    magnitude2 = 0
+    for word in vector1:
+        dot_product += vector1[word] * vector2.get(word, 0)
+        magnitude1 += vector1[word] ** 2
+    for word in vector2:
+        magnitude2 += vector2[word] ** 2
+    magnitude1 = sqrt(magnitude1)
+    magnitude2 = sqrt(magnitude2)
+    if magnitude1 != 0 and magnitude2 != 0:
+        similarity = dot_product / (magnitude1 * magnitude2)
+    else:
+        similarity = 0
+    return similarity
+
+
+# Function to perform linear search using vector space model
+def linear_search(query, model, folder, stemming, ground_truth):
+    if stemming:
+        query = remove_stopwords(query)
+        query_words = query.split()
+        query_words = [apply_stemming(word) for word in query_words]
+        query = ' '.join(query_words)
+        folder += '_stemming'
+    else:
+        query = remove_stopwords(query)
+
+    start_time = time.time()
+
+    query_vector = {}
+    words = query.split()
+    word_counts = {}
+    max_word_count = 0
+    for word in words:
+        if word in word_counts:
+            word_counts[word] += 1
+        else:
+            word_counts[word] = 1
+        max_word_count = max(max_word_count, word_counts[word])
+
+    for word in words:
+        tf = word_counts[word] / max_word_count
+        idf = log10(len(os.listdir(folder)) / model.get(word, 0))
+        tf_idf = tf * idf
+        query_vector[word] = tf_idf
+
+    results = []
+    for file_name in os.listdir(folder):
+        with open(os.path.join(folder, file_name), 'r') as file:
+            document = file.read()
+        similarity = calculate_cosine_similarity(query_vector, model[file_name])
+        results.append((file_name, similarity))
+
+    results.sort(key=lambda x: x[1], reverse=True)
+    execution_time = time.time() - start_time
+
+    # Calculate precision and recall
+    retrieved_docs = [result[0] for result in results]
+    relevant_docs = ground_truth.get(query, [])
+    tp = len(set(retrieved_docs).intersection(relevant_docs))
+    precision = tp / len(retrieved_docs) if retrieved_docs else 0
+    recall = tp / len(relevant_docs) if relevant_docs else 0
+
+    return results, execution_time, precision, recall
+
+
+# Function to perform search using vector space model
+def vector_space_model_search(model, folder, stemming, ground_truth):
+    while True:
+        query = input("Enter query (or 'exit' to quit): ")
+        if query == 'exit':
             break
 
-    start_time = time.time()
-#for conjuction
-    if query_operator == '&':
-        term1 = query_terms[0].strip()
-        term2 = query_terms[1].strip()
-        results_term1 = set(inverted_index.get(term1, []))
-        results_term2 = set(inverted_index.get(term2, []))
-        results = list(results_term1.intersection(results_term2))
-#for disjuction
-    elif query_operator == '|':
-        term1 = query_terms[0].strip()
-        term2 = query_terms[1].strip()
-        results = list(set(inverted_index.get(term1, [])) | set(inverted_index.get(term2, [])))
-#for negation
-    elif query_operator == '-':
-        negation_term = query_terms[0].strip()[1:]
-        results = list(set(os.listdir(folder)) - set(inverted_index.get(negation_term, [])))
+        results, execution_time, precision, recall = linear_search(query, model, folder, stemming, ground_truth)
 
-    precision = recall = 0.0
-    relevant_docs = set()
-
-    for result in results:
-        doc_id = int(result.split('_')[0])
-        relevant_docs.add(doc_id)
-
-    if query_terms:
-        relevant_docs_ground_truth = set()
-        for term in query_terms:
-            if term in ground_truth:
-                relevant_docs_ground_truth.update(ground_truth[term])
-
-        true_positives = len(relevant_docs.intersection(relevant_docs_ground_truth))
-        retrieved_docs = len(relevant_docs)
-
-        if retrieved_docs > 0:
-            precision = true_positives / retrieved_docs
-
-        if len(relevant_docs_ground_truth) > 0:
-            recall = true_positives / len(relevant_docs_ground_truth)
-       
-    end_time = time.time()
-    precision_str = f"P={precision:.2f}" if precision > 0 else "P=?"
-    recall_str = f"R={recall:.2f}" if recall > 0 else "R=?"
-    execution_time = (end_time - start_time) * 1000
-    return results,execution_time,precision_str,recall_str
+        print(f"\nSearch Results for '{query}':")
+        print("-------------------------------------------------------")
+        print(f"Search took {execution_time:.6f} seconds.")
+        print(f"Precision: {precision:.2%}")
+        print(f"Recall: {recall:.2%}")
+        print("-------------------------------------------------------")
+        for i, result in enumerate(results, start=1):
+            print(f"{i}. Document: {result[0]}")
+            print(f"   Similarity: {result[1]:.6f}")
+            print("-------------------------------------------------------")
 
 
-#------------------------------------------Calling function------------------------------------------------------------
-
+# Main function
 if __name__ == '__main__':
-    if len(sys.argv) == 3 and sys.argv[1] == '--extract-collection':
-        file_name = sys.argv[2]
-        extract_fables(file_name)
-    elif (
-        len(sys.argv) == 10
-        and sys.argv[1] == '--model'
-        and sys.argv[2] == 'bool'
-        and sys.argv[3] == '--search-mode'
-        and (sys.argv[4] == 'linear' or sys.argv[4] == 'inverted')
-        and sys.argv[5] == '--documents'
-        and (sys.argv[6] == 'original' or sys.argv[6] == 'no_stopwords')
-        and sys.argv[7] == '--stemming'
-        and sys.argv[8] == '--query'
-    ):
-        model = sys.argv[6]
-        apply_stemming_flag = True
-        query = sys.argv[9]
-        if model == "original":
-            folder = "collection_original"
-        else:
-            folder = "collection_no_stopwords"
-        ground_truth = read_ground_truth("ground_truth.txt")
-        if sys.argv[4] == 'linear':
-            results,execution_time,precision_str,recall_str=linear_search(query, model, folder, apply_stemming_flag, ground_truth)
-        else:
-           results,execution_time,precision_str,recall_str= inverted_list_search(query, model, folder, apply_stemming_flag, ground_truth)
-        for result in results:
-            print(result)
-        print(f"T={execution_time:.2f}ms,{precision_str},{recall_str}")
+    # Extract fables from the file
+    extract_fables('aesop.txt')
 
-    else:
-        print("Invalid command line arguments.")
-        print("Usage: python my_ir_system.py --extract-collection aesop10.txt")
-        print("Usage: python my_ir_system.py --model \"bool\" --search-mode \"linear\" --documents \"original\" --stemming --query \"somesearchterm\"")
-        print("Usage: python my_ir_system.py --model \"bool\" --search-mode \"inverted\" --documents \"original\" --stemming --query \"somesearchterm(fox|wolf\"")
+    # Preprocess the documents
+    preprocess_documents('collection_original', 'collection_preprocessed')
+
+    # Calculate the TF-IDF vector
+    tf_idf_model = calculate_tf_idf_vector('collection_preprocessed')
+
+    # Read the ground_truth.txt file
+    ground_truth = read_ground_truth('ground_truth.txt')
+
+    # Perform search using vector space model
+    vector_space_model_search(tf_idf_model, 'collection_preprocessed', False, ground_truth)
