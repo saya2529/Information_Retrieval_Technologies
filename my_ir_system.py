@@ -3,6 +3,9 @@ import re
 import sys
 import string
 import time
+from collections import Counter
+import math
+
 
 #function toread ground_truth.txt file
 def read_ground_truth(file_path):
@@ -440,23 +443,127 @@ def inverted_list_search(query, model, folder, apply_stemming_flag,ground_truth)
     execution_time = (end_time - start_time) * 1000
     return results,execution_time,precision_str,recall_str
 
+#------------------------------Function for inverted list search with Vector Space Model--------------------------------
+def inverted_list_search_vsm(query, folder, apply_stemming_flag, ground_truth):
+    if apply_stemming_flag:
+        query = apply_stemming(query)
+    else:
+        query = remove_stopwords(query)
 
-#------------------------------------------Calling function------------------------------------------------------------
+    print(f"Model: vector, Query: {query}")
+    print("Search Results:")
+
+    inverted_index = {}
+    document_lengths = {}
+    num_documents = 0
+
+    start_time = time.time()
+
+    # Compute inverted index and document lengths
+    for file_name in os.listdir(folder):
+        with open(os.path.join(folder, file_name), 'r') as file:
+            content = file.read()
+
+        words = content.lower().split()
+        translator = str.maketrans("", "", string.punctuation)  # Translator to remove punctuation marks
+
+        document_id = int(file_name.split('_')[0])
+
+        document_lengths[document_id] = 0  # Initialize document length
+
+        for word in words:
+            word = word.translate(translator)  # Remove punctuation marks from the word
+            if word:
+                if word not in inverted_index:
+                    inverted_index[word] = []
+                if document_id not in inverted_index[word]:
+                    inverted_index[word].append(document_id)
+                    document_lengths[document_id] += 1  # Increment document length
+        num_documents += 1  # Increment total number of documents
+
+    # Compute tf-idf weights for the query terms
+    query_terms = query.split()
+    query_term_freqs = Counter(query_terms)
+    query_vector = {}
+
+    for term, freq in query_term_freqs.items():
+        tf = 1 + math.log10(freq)  # Apply tf weighting
+        df = len(inverted_index.get(term, []))
+        idf = math.log10(num_documents / df) if df > 0 else 0  # Compute idf
+        tf_idf = tf * idf  # Compute tf-idf weight
+        query_vector[term] = tf_idf
+
+    # Compute the query vector length
+    query_vector_length = math.sqrt(sum(math.pow(weight, 2) for weight in query_vector.values()))
+
+    # Compute document scores
+    document_scores = {}
+
+    for term, weight in query_vector.items():
+        if term in inverted_index:
+            postings = inverted_index[term]
+            for document_id in postings:
+                document_length = document_lengths[document_id]
+                if document_length > 0:  # Check if document length is greater than zero
+                    tf_idf = weight * (1 + math.log10(document_length))  # Apply tf weighting on document length
+                    if document_id not in document_scores:
+                        document_scores[document_id] = 0
+                    document_scores[document_id] += tf_idf
+
+    # Normalize document scores by document vector lengths
+    for document_id, score in document_scores.items():
+        document_vector_length = math.sqrt(document_lengths[document_id])
+        document_scores[document_id] /= (query_vector_length * document_vector_length)
+
+    # Sort documents based on scores
+    results = sorted(document_scores.keys(), key=lambda doc_id: document_scores[doc_id], reverse=True)
+
+    precision = recall = 0.0
+    relevant_docs = set()
+
+    for result in results:
+        doc_id = result
+        relevant_docs.add(doc_id)
+
+    if query_terms:
+        relevant_docs_ground_truth = set()
+        for term in query_terms:
+            if term in ground_truth:
+                relevant_docs_ground_truth.update(ground_truth[term])
+
+        true_positives = len(relevant_docs.intersection(relevant_docs_ground_truth))
+        retrieved_docs = len(relevant_docs)
+
+        if retrieved_docs > 0:
+            precision = true_positives / retrieved_docs
+
+        if len(relevant_docs_ground_truth) > 0:
+            recall = true_positives / len(relevant_docs_ground_truth)
+
+    end_time = time.time()
+
+    precision_str = f"P={precision:.2f}" if precision > 0 else "P=?"
+    recall_str = f"R={recall:.2f}" if recall > 0 else "R=?"
+    execution_time = (end_time - start_time) * 1000
+    # Sort documents based on scores
+
+    return results, execution_time, precision_str, recall_str
+
 
 if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == '--extract-collection':
         file_name = sys.argv[2]
         extract_fables(file_name)
     elif (
-        len(sys.argv) == 10
-        and sys.argv[1] == '--model'
-        and sys.argv[2] == 'bool'
-        and sys.argv[3] == '--search-mode'
-        and (sys.argv[4] == 'linear' or sys.argv[4] == 'inverted')
-        and sys.argv[5] == '--documents'
-        and (sys.argv[6] == 'original' or sys.argv[6] == 'no_stopwords')
-        and sys.argv[7] == '--stemming'
-        and sys.argv[8] == '--query'
+            len(sys.argv) == 10
+            and sys.argv[1] == '--model'
+            and sys.argv[2] == 'bool'
+            and sys.argv[3] == '--search-mode'
+            and (sys.argv[4] == 'linear' or sys.argv[4] == 'inverted')
+            and sys.argv[5] == '--documents'
+            and (sys.argv[6] == 'original' or sys.argv[6] == 'no_stopwords')
+            and sys.argv[7] == '--stemming'
+            and sys.argv[8] == '--query'
     ):
         model = sys.argv[6]
         apply_stemming_flag = True
@@ -466,16 +573,55 @@ if __name__ == '__main__':
         else:
             folder = "collection_no_stopwords"
         ground_truth = read_ground_truth("ground_truth.txt")
+
         if sys.argv[4] == 'linear':
-            results,execution_time,precision_str,recall_str=linear_search(query, model, folder, apply_stemming_flag, ground_truth)
+            results, execution_time, precision_str, recall_str = linear_search(query, model, folder,
+                                                                              apply_stemming_flag, ground_truth)
+        elif sys.argv[4] == 'inverted':
+            results, execution_time, precision_str, recall_str = inverted_list_search(query, model, folder,
+                                                                                     apply_stemming_flag, ground_truth)
+        elif sys.argv[4] == 'vector':
+            results, execution_time, precision_str, recall_str = inverted_list_search_vsm(query, folder,
+                                                                                          apply_stemming_flag,
+                                                                                          ground_truth)
         else:
-           results,execution_time,precision_str,recall_str= inverted_list_search(query, model, folder, apply_stemming_flag, ground_truth)
+            print("Invalid search mode.")
+            sys.exit(1)
+
         for result in results:
             print(result)
-        print(f"T={execution_time:.2f}ms,{precision_str},{recall_str}")
+        print(f"T={execution_time:.2f}ms, {precision_str}, {recall_str}")
+    elif (
+            len(sys.argv) == 8
+            and sys.argv[1] == '--model'
+            and sys.argv[2] == 'vector'
+            and sys.argv[3] == '--documents'
+            and (sys.argv[4] == 'original' or sys.argv[6] == 'no_stopwords')
+            and sys.argv[5] == '--stemming'
+            and sys.argv[6] == '--query'
+    ):
+        model = sys.argv[4]
+        apply_stemming_flag = True
+        query = sys.argv[7]
+        if model == "original":
+            folder = "collection_original"
+        else:
+            folder = "collection_no_stopwords"
+        ground_truth = read_ground_truth("ground_truth.txt")
 
+        if sys.argv[2] == 'vector':
+            results, execution_time, precision_str, recall_str = inverted_list_search_vsm(query, folder,
+                                                                                          apply_stemming_flag,
+                                                                                          ground_truth)
+        else:
+            print("Invalid search mode.")
+            sys.exit(1)
+
+        print(f"T={execution_time:.2f}ms, {precision_str}, {recall_str}")
     else:
         print("Invalid command line arguments.")
         print("Usage: python my_ir_system.py --extract-collection aesop10.txt")
-        print("Usage: python my_ir_system.py --model \"bool\" --search-mode \"linear\" --documents \"original\" --stemming --query \"somesearchterm\"")
-        print("Usage: python my_ir_system.py --model \"bool\" --search-mode \"inverted\" --documents \"original\" --stemming --query \"somesearchterm(fox|wolf\"")
+        print(
+            "Usage: python my_ir_system.py --model \"bool\" --search-mode \"linear\" --documents \"original\" --stemming --query \"somesearchterm\"")
+        print(
+            "Usage: python my_ir_system.py --model \"bool\" --search-mode \"inverted\" --documents \"original\" --stemming --query \"somesearchterm(fox|wolf\"")
